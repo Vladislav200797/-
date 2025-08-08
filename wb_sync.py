@@ -55,8 +55,10 @@ class WBSync:
         return response.json()
     
     def transform_data(self, data: list) -> list:
-        """Трансформация данных для Supabase"""
-        return [{
+    """Трансформация данных для Supabase с обработкой пустых дат"""
+    transformed = []
+    for item in data:
+        record = {
             "date": item["date"],
             "log_warehouse_coef": item["logWarehouseCoef"],
             "office_id": item["officeId"],
@@ -76,11 +78,14 @@ class WBSync:
             "barcodes_count": item["barcodesCount"],
             "pallet_place_code": item["palletPlaceCode"],
             "pallet_count": item["palletCount"],
-            "original_date": item["originalDate"],
             "loyalty_discount": item["loyaltyDiscount"],
-            "tariff_fix_date": item["tariffFixDate"],
-            "tariff_lower_date": item["tariffLowerDate"]
-        } for item in data]
+            # Обработка пустых дат
+            "original_date": item["originalDate"] if item["originalDate"] else None,
+            "tariff_fix_date": item["tariffFixDate"] if item["tariffFixDate"] else None,
+            "tariff_lower_date": item["tariffLowerDate"] if item["tariffLowerDate"] else None
+        }
+        transformed.append(record)
+    return transformed
     
     def load_data_period(self, date_from: str, date_to: str):
         """Обработка одного периода"""
@@ -135,3 +140,21 @@ if __name__ == "__main__":
     
     # Для ежедневного обновления:
     sync.daily_update()
+
+def validate_date(date_str: str) -> str | None:
+    """Проверка корректности даты"""
+    if not date_str:
+        return None
+    try:
+        datetime.fromisoformat(date_str)
+        return date_str
+    except ValueError:
+        return None
+
+for item in data:
+    try:
+        # Трансформация данных
+        ...
+    except Exception as e:
+        logger.error(f"Ошибка обработки записи: {item}. Ошибка: {str(e)}")
+        continue
