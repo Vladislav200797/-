@@ -55,37 +55,40 @@ class WBSync:
         return response.json()
     
     def transform_data(self, data: list) -> list:
-    """Трансформация данных для Supabase с обработкой пустых дат"""
-    transformed = []
-    for item in data:
-        record = {
-            "date": item["date"],
-            "log_warehouse_coef": item["logWarehouseCoef"],
-            "office_id": item["officeId"],
-            "warehouse": item["warehouse"],
-            "warehouse_coef": item["warehouseCoef"],
-            "gi_id": item["giId"],
-            "chrt_id": item["chrtId"],
-            "size": item["size"],
-            "barcode": item["barcode"],
-            "subject": item["subject"],
-            "brand": item["brand"],
-            "vendor_code": item["vendorCode"],
-            "nm_id": item["nmId"],
-            "volume": item["volume"],
-            "calc_type": item["calcType"],
-            "warehouse_price": item["warehousePrice"],
-            "barcodes_count": item["barcodesCount"],
-            "pallet_place_code": item["palletPlaceCode"],
-            "pallet_count": item["palletCount"],
-            "loyalty_discount": item["loyaltyDiscount"],
-            # Обработка пустых дат
-            "original_date": item["originalDate"] if item["originalDate"] else None,
-            "tariff_fix_date": item["tariffFixDate"] if item["tariffFixDate"] else None,
-            "tariff_lower_date": item["tariffLowerDate"] if item["tariffLowerDate"] else None
-        }
-        transformed.append(record)
-    return transformed
+        """Трансформация данных для Supabase с обработкой пустых дат"""
+        transformed = []
+        for item in data:
+            try:
+                record = {
+                    "date": item["date"],
+                    "log_warehouse_coef": item.get("logWarehouseCoef"),
+                    "office_id": item.get("officeId"),
+                    "warehouse": item.get("warehouse"),
+                    "warehouse_coef": item.get("warehouseCoef"),
+                    "gi_id": item.get("giId"),
+                    "chrt_id": item.get("chrtId"),
+                    "size": item.get("size"),
+                    "barcode": item.get("barcode"),
+                    "subject": item.get("subject"),
+                    "brand": item.get("brand"),
+                    "vendor_code": item.get("vendorCode"),
+                    "nm_id": item.get("nmId"),
+                    "volume": item.get("volume"),
+                    "calc_type": item.get("calcType"),
+                    "warehouse_price": item.get("warehousePrice"),
+                    "barcodes_count": item.get("barcodesCount"),
+                    "pallet_place_code": item.get("palletPlaceCode"),
+                    "pallet_count": item.get("palletCount"),
+                    "loyalty_discount": item.get("loyaltyDiscount"),
+                    "original_date": item.get("originalDate") or None,
+                    "tariff_fix_date": item.get("tariffFixDate") or None,
+                    "tariff_lower_date": item.get("tariffLowerDate") or None
+                }
+                transformed.append(record)
+            except Exception as e:
+                logger.error(f"Ошибка обработки записи: {item}. Ошибка: {str(e)}")
+                continue
+        return transformed
     
     def load_data_period(self, date_from: str, date_to: str):
         """Обработка одного периода"""
@@ -105,10 +108,15 @@ class WBSync:
         # 4. Трансформируем и сохраняем
         if report_data:
             transformed = self.transform_data(report_data)
-            self.supabase.table("wb_paid_storage").upsert(transformed).execute()
-            logger.info(f"Сохранено записей: {len(transformed)}")
+            # Вставка пакетами по 500 записей
+            batch_size = 500
+            for i in range(0, len(transformed), batch_size):
+                batch = transformed[i:i + batch_size]
+                self.supabase.table("wb_paid_storage").upsert(batch).execute()
+                logger.info(f"Сохранено записей: {len(batch)}")
+                time.sleep(1)  # Небольшая пауза между пакетами
         
-        # Соблюдаем лимит 1 запрос/минуту
+        # Соблюдаем лимит 1 запрос/минуту к WB API
         time.sleep(60)
     
     def initial_load(self):
@@ -120,10 +128,14 @@ class WBSync:
         current_date = start_date
         while current_date <= end_date:
             period_end = min(current_date + timedelta(days=7), end_date)
-            self.load_data_period(
-                current_date.isoformat(),
-                period_end.isoformat()
-            )
+            try:
+                self.load_data_period(
+                    current_date.isoformat(),
+                    period_end.isoformat()
+                )
+            except Exception as e:
+                logger.error(f"Ошибка загрузки периода {current_date}: {str(e)}")
+                time.sleep(120)  # Увеличенная пауза при ошибке
             current_date = period_end + timedelta(days=1)
     
     def daily_update(self):
@@ -135,26 +147,12 @@ class WBSync:
 if __name__ == "__main__":
     sync = WBSync()
     
-    # Для первоначальной загрузки:
-    # sync.initial_load()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--initial", action="store_true", help="Первоначальная загрузка за весь год")
+    args = parser.parse_args()
     
-    # Для ежедневного обновления:
-    sync.daily_update()
-
-def validate_date(date_str: str) -> str | None:
-    """Проверка корректности даты"""
-    if not date_str:
-        return None
-    try:
-        datetime.fromisoformat(date_str)
-        return date_str
-    except ValueError:
-        return None
-
-for item in data:
-    try:
-        # Трансформация данных
-        ...
-    except Exception as e:
-        logger.error(f"Ошибка обработки записи: {item}. Ошибка: {str(e)}")
-        continue
+    if args.initial:
+        sync.initial_load()
+    else:
+        sync.daily_update()
