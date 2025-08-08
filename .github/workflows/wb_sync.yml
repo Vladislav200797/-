@@ -2,8 +2,8 @@ name: WB Storage Sync
 
 on:
   schedule:
-    - cron: '0 6 * * *'  # Каждый день в 06:00 UTC (09:00 МСК)
-  workflow_dispatch:     # Можно запустить вручную
+    - cron: '0 6 * * *'  # Ежедневно в 06:00 UTC (09:00 МСК)
+  workflow_dispatch:
 
 jobs:
   sync:
@@ -25,11 +25,11 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install requests python-dotenv supabase
+        pip install requests supabase python-dotenv
 
-    - name: Run initial load (только при первом запуске)
+    - name: Run initial load (только при ручном запуске)
       if: github.event_name == 'workflow_dispatch'
-      run: python initial_load.py
+      run: python wb_sync.py --initial
 
     - name: Run daily update
-      run: python daily_update.py
+      run: python wb_sync.py
